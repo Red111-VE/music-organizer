@@ -1,0 +1,55 @@
+# Models — too heavy for git, must be downloaded separately
+models/*.pb
+models/*.json
+!models/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# User data — never commit user music or reports
+*.flac
+*.mp3
+*.m4a
+*.wav
+*.aiff
+_REPORTE_*.csv
+_REVISAR/
+*.m3u8
+
+# Reference material — snapshots de los scripts originales pre-refactor,
+# útiles para comparación local pero fuera del scope del repo público.
+reference_scripts/
+
+# Local config
+.env
+.env.local
+config.local.json
+
+# OS artifacts
+Thumbs.db
+desktop.ini

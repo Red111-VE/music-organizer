@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "music-organizer"
+version = "0.1.0"
+description = "Smart library tools for DJs — automatic genre and energy tagging"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Jorge / RED111", email = "hello@red111.dev" }
+]
+keywords = ["dj", "music", "rekordbox", "audio-analysis", "essentia", "tagging"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
+
+dependencies = [
+    "essentia-tensorflow>=2.1b6.dev1110",
+    "mutagen>=1.47.0",
+    "numpy>=1.24.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.9",
+    "websockets>=12.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.3.0",
+    "mypy>=1.9.0",
+]
+
+[project.scripts]
+music-organizer = "cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/Red111-VE/music-organizer"
+Documentation = "https://github.com/Red111-VE/music-organizer/blob/main/README.md"
+Repository = "https://github.com/Red111-VE/music-organizer"
+Issues = "https://github.com/Red111-VE/music-organizer/issues"
+
+[tool.setuptools.packages.find]
+include = ["core*", "cli*", "web*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# reference_scripts/ son snapshots de los 4 scripts originales que sirven de
+# referencia comparativa. No los modificamos ni los lintamos.
+extend-exclude = ["reference_scripts"]
+
+[tool.mypy]
+# essentia y essentia.standard no traen type stubs. Resto de imports normal.
+exclude = ["reference_scripts/"]
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = ["essentia", "essentia.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
