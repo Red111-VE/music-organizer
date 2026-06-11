@@ -1,0 +1,378 @@
+{#-
+  Pantalla 3 — Resultados + histograma interactivo.
+
+  Carga ``GET /api/state`` una sola vez (sin WebSocket — el job ya
+  terminó). Los tracks viajan con sus arousals; la exploración de
+  umbrales es 100% client-side: mover sliders → recalcular distribución
+  con :mod:`web.static.histogram` → redibujar. El servidor no se toca.
+
+  Sin tracks: empty state con link a /.
+
+  Pieza estrella: el histograma SVG donde cada bin se colorea según el
+  bucket actual (depende de los sliders), con líneas verticales dashed
+  marcando los thresholds. Cambia en vivo.
+
+  Botón "Aplicar umbrales" deshabilitado por ahora — esta versión es
+  exploratoria, la aplicación real (que invocaría recalibrate) llega
+  cuando el endpoint exista.
+-#}
+{% extends "base.html" %}
+
+{% block title %}Resultados{% endblock %}
+
+{% block content %}
+<div x-data="resultsView()" x-init="init()">
+
+  <header class="page-intro">
+    <h1 x-text="titleText">Resultados</h1>
+    <p class="lead" x-text="leadText"></p>
+  </header>
+
+  {#- Error de carga del snapshot. -#}
+  <section class="form-error" x-show="bootError" x-cloak role="alert">
+    <span x-text="bootError"></span>
+  </section>
+
+  {#- Empty state: llegaste a /results sin job completado. -#}
+  <section class="empty-state" x-show="!bootError && tracks.length === 0" x-cloak>
+    <p class="lead">No hay resultados todavía — corré un análisis primero.</p>
+    <a href="/" class="button-secondary">
+      <span class="button-arrow">←</span>
+      Iniciar un análisis
+    </a>
+  </section>
+
+  {#- ============================================================
+      Contenido principal — solo si hay tracks.
+      ============================================================ -#}
+  <div x-show="tracks.length > 0" x-cloak>
+
+    {#- Stats: 3 grandes números. -#}
+    <section class="form-section">
+      <dl class="stats">
+        <div class="stat">
+          <dt class="stat-label">Pistas analizadas</dt>
+          <dd class="stat-value mono" x-text="tracks.length"></dd>
+        </div>
+        <div class="stat">
+          <dt class="stat-label">OK</dt>
+          <dd class="stat-value mono" x-text="okCount"></dd>
+        </div>
+        <div class="stat">
+          <dt class="stat-label">Errores</dt>
+          <dd class="stat-value stat-value--muted mono" x-text="errCount"></dd>
+        </div>
+      </dl>
+
+      <div class="report-line" x-show="result && result.report" x-cloak>
+        <span class="report-line-label">Reporte CSV</span>
+        <code class="report-line-path mono" x-text="(result && result.report) || ''"></code>
+      </div>
+    </section>
+
+    {#- Géneros detectados. -#}
+    <section class="form-section" x-show="genres.length > 0">
+      <div class="section-header">
+        <span class="section-label">Géneros detectados</span>
+        <span class="section-rule"></span>
+        <span class="section-count mono"
+              x-text="`${genres.length} género${genres.length === 1 ? '' : 's'}`"></span>
+      </div>
+      <ul class="genre-list">
+        <template x-for="[genre, count] in genres" :key="genre">
+          <li class="genre-row">
+            <span class="genre-name" x-text="genre"></span>
+            <div class="genre-bar">
+              <div class="genre-fill"
+                   :style="`width: ${(count / topGenreCount) * 100}%`"></div>
+            </div>
+            <span class="genre-count mono" x-text="count"></span>
+          </li>
+        </template>
+      </ul>
+    </section>
+
+    {#- Exploración interactiva de thresholds — la pieza estrella. -#}
+    <section class="form-section threshold-section">
+      <div class="section-header">
+        <span class="section-label">Distribución de energía</span>
+        <span class="section-rule"></span>
+        <span class="section-count mono">
+          umbrales
+          <span class="thresholds-inline">
+            <span x-text="thresholds[0].toFixed(1)"></span>
+            <span class="sep">/</span>
+            <span x-text="thresholds[1].toFixed(1)"></span>
+            <span class="sep">/</span>
+            <span x-text="thresholds[2].toFixed(1)"></span>
+          </span>
+        </span>
+      </div>
+
+      {#- Histograma SVG. Cada bin coloreado según el bucket actual. -#}
+      <div class="chart-frame">
+        <svg class="histogram-chart"
+             viewBox="0 0 800 200"
+             preserveAspectRatio="none"
+             aria-hidden="true">
+
+          {#- Líneas horizontales sutiles de fondo (5 divisiones). -#}
+          <g class="grid">
+            <template x-for="y in [0, 50, 100, 150, 200]" :key="y">
+              <line :x1="0" :y1="y" :x2="800" :y2="y"
+                    stroke="rgba(255,255,255,0.04)"
+                    vector-effect="non-scaling-stroke"/>
+            </template>
+          </g>
+
+          {#- Barras. -#}
+          <template x-for="(bar, i) in chartBars" :key="i">
+            <rect :x="bar.x" :y="bar.y"
+                  :width="bar.width" :height="bar.height"
+                  :fill="bar.color"/>
+          </template>
+
+          {#- Líneas verticales dashed en cada threshold. -#}
+          <template x-for="(m, i) in thresholdMarkers" :key="i">
+            <line :x1="m.x" y1="0" :x2="m.x" y2="200"
+                  stroke="rgba(255,255,255,0.35)"
+                  stroke-dasharray="3 4"
+                  vector-effect="non-scaling-stroke"/>
+          </template>
+        </svg>
+
+        <div class="histogram-axis" aria-hidden="true">
+          <template x-for="x in [1,2,3,4,5,6,7,8,9]" :key="x">
+            <span class="axis-tick"
+                  :style="`left: ${((x - 1) / 8) * 100}%`"
+                  x-text="x"></span>
+          </template>
+        </div>
+      </div>
+
+      {#- Sliders de threshold. -#}
+      <div class="sliders">
+        <template x-for="(_, i) in [0, 1, 2]" :key="i">
+          <div class="slider-row">
+            <div class="slider-label-row">
+              <span class="slider-name" x-text="sliderLabels[i]"></span>
+              <span class="slider-value mono" x-text="thresholds[i].toFixed(1)"></span>
+            </div>
+            <input
+              type="range"
+              min="1" max="9" step="0.1"
+              class="slider"
+              :data-slider="i"
+              x-model.number="thresholds[i]"
+            >
+          </div>
+        </template>
+      </div>
+
+      {#- Acciones sobre los thresholds. -#}
+      <div class="threshold-actions">
+        <button type="button" class="button-secondary" @click="autoCalibrate()">
+          Auto-calibrar
+          <span class="action-meta mono">P25 / P50 / P75</span>
+        </button>
+        <button type="button" class="button-secondary" @click="resetToDefaults()">
+          Restaurar defaults
+          <span class="action-meta mono">4.8 / 5.8 / 6.6</span>
+        </button>
+        <div class="apply-wrap">
+          <button type="button" class="button-primary" disabled
+                  title="Esta versión es solo exploratoria">
+            <span>Aplicar umbrales</span>
+            <span class="button-tag">próximamente</span>
+          </button>
+        </div>
+      </div>
+
+      <p class="apply-hint">
+        La exploración es local — mover los sliders no regraba ningún tag.
+        Cuando esté listo el endpoint de recalibración, "Aplicar"
+        invocará a <code>recalibrate</code> con los umbrales actuales y
+        regenerará los tags <code>genre</code> + <code>comment</code> de
+        cada pista.
+      </p>
+
+      {#- Distribución resultante con los sliders actuales. -#}
+      <div class="distribution">
+        <div class="section-header">
+          <span class="section-label">Distribución resultante</span>
+          <span class="section-rule"></span>
+        </div>
+        <div class="histogram">
+          <template x-for="level in Histogram.LEVELS" :key="level">
+            <div class="histogram-row" :data-level="level">
+              <span class="histogram-label" x-text="level"></span>
+              <div class="histogram-bar">
+                <div class="histogram-fill"
+                     :style="`width: ${(distribution[level] / Math.max(1, tracks.length)) * 100}%`">
+                </div>
+              </div>
+              <span class="histogram-count mono">
+                <span x-text="distribution[level]"></span>
+                <span class="pct" x-text="`(${distributionPercent[level]}%)`"></span>
+              </span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <div class="phase-actions">
+      <a href="/" class="button-secondary">
+        <span class="button-arrow" aria-hidden="true">←</span>
+        Volver a inicio
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{#- IMPORTANTE: histogram.js SIN ``defer`` para que ejecute durante el
+    parseo del body, antes de que Alpine (con ``defer`` en el head)
+    inicialice los componentes. Si tuviera ``defer``, Alpine podría correr
+    primero y ``Histogram`` no existiría al llamar a resultsView(). -#}
+<script src="/static/histogram.js"></script>
+<script>
+  function resultsView() {
+    return {
+      tracks: [],
+      result: null,
+      bootError: '',
+
+      // Thresholds editables. Defaults del proyecto (core.config).
+      // 0=BAJA→MEDIA, 1=MEDIA→ALTA, 2=ALTA→MUYALTA.
+      thresholds: [...Histogram.DEFAULT_THRESHOLDS],
+
+      sliderLabels: ['BAJA → MEDIA', 'MEDIA → ALTA', 'ALTA → MUY ALTA'],
+
+      // Referencia exportada para Alpine — necesaria para template loops
+      // que iteran sobre niveles ordenados (Histogram.LEVELS).
+      Histogram: window.Histogram,
+
+      async init() {
+        try {
+          const res = await fetch('/api/state');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const snap = await res.json();
+          this.tracks = snap.tracks || [];
+          this.result = snap.result;
+        } catch (e) {
+          this.bootError = `No se pudo cargar el estado: ${e.message}`;
+        }
+      },
+
+      // ---- Derivaciones --------------------------------------------------
+
+      get arousals() {
+        return this.tracks.map(t => t.arousal);
+      },
+
+      get genres() {
+        return Histogram.genreDistribution(this.tracks);
+      },
+
+      get topGenreCount() {
+        return this.genres.length > 0 ? this.genres[0][1] : 1;
+      },
+
+      get distribution() {
+        return Histogram.levelDistribution(this.arousals, this.thresholds);
+      },
+
+      get distributionPercent() {
+        const total = this.tracks.length || 1;
+        const dist = this.distribution;
+        const out = {};
+        for (const k of Object.keys(dist)) {
+          out[k] = Math.round((dist[k] / total) * 100);
+        }
+        return out;
+      },
+
+      // ---- SVG: barras y marcadores -------------------------------------
+
+      get chartBars() {
+        const W = 800;
+        const H = 200;
+        const MIN = 1;
+        const MAX = 9;
+        const BINS = 32;          // 0.25 de ancho por bin sobre [1, 9]
+        const GAP = 1;            // gap visual entre bins (en unidades viewBox)
+
+        const bins = Histogram.computeBins(this.arousals, BINS, MIN, MAX);
+        const maxCount = Math.max(1, ...bins.map(b => b.count));
+        const range = MAX - MIN;
+
+        return bins.map(b => {
+          const center = (b.start + b.end) / 2;
+          const level = Histogram.bucketize(center, this.thresholds);
+          const x = ((b.start - MIN) / range) * W;
+          const w = ((b.end - b.start) / range) * W;
+          const h = (b.count / maxCount) * H;
+          return {
+            x: x,
+            y: H - h,
+            width: Math.max(0, w - GAP),
+            height: h,
+            color: b.count === 0
+              ? 'rgba(255, 255, 255, 0.03)'   // bin vacío: indicio sutil
+              : Histogram.LEVEL_COLOR[level],
+          };
+        });
+      },
+
+      get thresholdMarkers() {
+        const W = 800;
+        const MIN = 1;
+        const MAX = 9;
+        const range = MAX - MIN;
+        return this.thresholds.map(t => ({
+          x: ((t - MIN) / range) * W,
+        }));
+      },
+
+      // ---- Resumen ------------------------------------------------------
+
+      get okCount() {
+        if (this.result) return this.result.tag_ok ?? this.tracks.length;
+        return this.tracks.length;
+      },
+
+      get errCount() {
+        if (this.result) return this.result.tag_err ?? 0;
+        return 0;
+      },
+
+      get titleText() {
+        if (this.tracks.length === 0) return 'Sin resultados';
+        return 'Resultados';
+      },
+
+      get leadText() {
+        if (this.bootError) return '';
+        if (this.tracks.length === 0)
+          return 'Iniciá un análisis para ver el desglose y explorar umbrales.';
+        return 'Resumen del análisis y exploración interactiva de los umbrales de energía. Los sliders recalculan en vivo, sin tocar el server.';
+      },
+
+      // ---- Acciones -----------------------------------------------------
+
+      autoCalibrate() {
+        const arousals = this.arousals;
+        if (arousals.length < 2) return;
+        this.thresholds = Histogram.autoCalibrate(arousals);
+      },
+
+      resetToDefaults() {
+        this.thresholds = [...Histogram.DEFAULT_THRESHOLDS];
+      },
+    };
+  }
+</script>
+{% endblock %}

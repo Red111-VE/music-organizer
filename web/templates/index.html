@@ -1,0 +1,523 @@
+{#-
+  Pantalla 1 — Setup.
+
+  Formulario para configurar y lanzar el job: tres rutas (source, models,
+  dest) y cuatro opciones (simulate, flat, no-lossless, move). Alpine
+  intercepta el submit, hace POST /api/start con JSON, y según la
+  respuesta:
+
+  - 202 → redirige a /progress (el WS toma el relevo).
+  - 400 → muestra el detail del server (ruta inválida, etc).
+  - 409 → muestra "ya hay un job corriendo" + link a /progress.
+
+  El formulario respeta la paridad con la CLI:
+  - Nombres de opciones en inglés (simulate / flat / no-lossless / move),
+    iguales a los flags de la CLI.
+  - Defaults a False — el usuario opta in, igual que la CLI.
+  - "move" lleva el aviso destacado (es la opción destructiva).
+-#}
+{% extends "base.html" %}
+
+{% block title %}Setup{% endblock %}
+
+{% block content %}
+{#- Wrapper x-data: el form Y el modal del file-browser comparten el mismo
+    scope reactivo. Si el modal viviera fuera de este div, no vería
+    ``browser.open`` ni ``closeBrowser()`` — Alpine es reactivo solo
+    dentro del scope del ``x-data``. -#}
+<div x-data="setupForm()" x-init="init()">
+
+<header class="page-intro">
+  <h1>Análisis nuevo</h1>
+  <p class="lead">
+    Detección de género y energía con Essentia, enriquecimiento de tags
+    y reorganización por género. Local, sin upload.
+  </p>
+</header>
+
+<form
+  class="setup-form"
+  @submit.prevent="submit()"
+  novalidate
+>
+  <section class="form-section">
+    <div class="section-header">
+      <span class="section-label">Carpetas</span>
+      <span class="section-rule"></span>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="f-source">Carpeta de música</label>
+      <p class="field-hint">
+        Origen del análisis. Se recorre recursivamente. Podés arrastrar la
+        carpeta desde Finder al campo para pegar la ruta.
+      </p>
+      <div class="path-field">
+        <div class="text-input-wrap" :data-status="status.source.state">
+          <input
+            id="f-source"
+            type="text"
+            class="text-input"
+            x-model="source"
+            @input="onPathChange('source')"
+            placeholder="/Volumes/MiDisco/Musica"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <span class="field-status" x-text="statusIcon('source')" aria-hidden="true"></span>
+        </div>
+        <button type="button" class="browse-btn" @click="openBrowser('source')">
+          Examinar…
+        </button>
+      </div>
+      <p class="field-feedback field-feedback--err"
+         x-show="status.source.state === 'err' && source"
+         x-cloak
+         x-text="status.source.reason"></p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="f-models">Carpeta de modelos</label>
+      <p class="field-hint">
+        5 archivos <code>.pb</code>/<code>.json</code> de Essentia. Si no
+        los tenés, descargalos con
+        <code>./scripts/download_models.sh</code> desde la raíz del proyecto.
+      </p>
+      <div class="path-field">
+        <div class="text-input-wrap" :data-status="status.models_dir.state">
+          <input
+            id="f-models"
+            type="text"
+            class="text-input"
+            x-model="models_dir"
+            @input="onPathChange('models_dir')"
+            placeholder="/Users/usuario/essentia_models"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <span class="field-status" x-text="statusIcon('models_dir')" aria-hidden="true"></span>
+        </div>
+        <button type="button" class="browse-btn" @click="openBrowser('models_dir')">
+          Examinar…
+        </button>
+      </div>
+      <p class="field-feedback field-feedback--ok"
+         x-show="status.models_dir.state === 'ok'"
+         x-cloak>
+        ✓ 5 modelos detectados
+      </p>
+      <p class="field-feedback field-feedback--err"
+         x-show="status.models_dir.state === 'err' && models_dir"
+         x-cloak>
+        <span x-text="status.models_dir.reason"></span>
+        <template x-if="status.models_dir.missing && status.models_dir.missing.length > 0">
+          <span class="field-feedback-detail">
+            <span class="mono" x-text="status.models_dir.missing.join(', ')"></span>
+          </span>
+        </template>
+      </p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="f-dest">Carpeta destino</label>
+      <p class="field-hint">Donde se organiza la salida. Se crea si no existe.</p>
+      <div class="path-field">
+        <div class="text-input-wrap" :data-status="status.dest.state">
+          <input
+            id="f-dest"
+            type="text"
+            class="text-input"
+            x-model="dest"
+            @input="onPathChange('dest')"
+            placeholder="/Volumes/MiDisco/Organizada"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <span class="field-status" x-text="statusIcon('dest')" aria-hidden="true"></span>
+        </div>
+        <button type="button" class="browse-btn" @click="openBrowser('dest')">
+          Examinar…
+        </button>
+      </div>
+      <p class="field-feedback field-feedback--err"
+         x-show="status.dest.state === 'err' && dest"
+         x-cloak
+         x-text="status.dest.reason"></p>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="section-header">
+      <span class="section-label">Opciones</span>
+      <span class="section-rule"></span>
+    </div>
+
+    <label class="option">
+      <input type="checkbox" x-model="simulate">
+      <span class="option-box" aria-hidden="true"></span>
+      <span class="option-body">
+        <span class="option-name">simulate</span>
+        <span class="option-hint">
+          Previsualización — no escribe tags ni copia archivos. Igual emite
+          todos los eventos y genera el CSV de tag para revisión.
+        </span>
+      </span>
+    </label>
+
+    <label class="option option--danger">
+      <input type="checkbox" x-model="move">
+      <span class="option-box" aria-hidden="true"></span>
+      <span class="option-body">
+        <span class="option-name">move</span>
+        <span class="option-hint">
+          <span class="option-warn">MUEVE archivos en lugar de copiar — vacía el origen.</span>
+          Default: copia (no toca el origen).
+        </span>
+      </span>
+    </label>
+  </section>
+
+  <div class="form-warn" x-show="pathRelationshipError" x-cloak role="alert">
+    <span class="form-warn-label mono">Atención</span>
+    <span x-text="pathRelationshipError"></span>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="button-primary"
+            :disabled="loading || !!pathRelationshipError">
+      <span x-show="!loading">Iniciar análisis</span>
+      <span x-show="loading" x-cloak>Lanzando…</span>
+      <span class="button-arrow" aria-hidden="true">→</span>
+    </button>
+  </div>
+
+  <div class="form-error" x-show="error" x-cloak role="alert">
+    <span x-text="error"></span>
+    <template x-if="existingJob">
+      <span> — <a href="/progress">ver progreso del job actual</a></span>
+    </template>
+  </div>
+</form>
+
+{#- Modal del explorador de carpetas. Server-side: pide subdirs vía
+    /api/browse. El browser no puede dar paths absolutos del SO por
+    seguridad, así que la única forma de elegir "una carpeta de tu disco"
+    desde la web es navegar lo que el server ve. -#}
+<div class="browser-modal" x-show="browser.open" x-cloak
+     @keydown.escape.window="closeBrowser()">
+  <div class="browser-backdrop" @click="closeBrowser()" aria-hidden="true"></div>
+  <div class="browser-dialog" role="dialog" aria-modal="true">
+
+    <div class="browser-header">
+      <h2 class="browser-title">
+        Seleccionar <span x-text="browser.fieldLabel"></span>
+      </h2>
+      <button type="button" class="browser-close" @click="closeBrowser()"
+              aria-label="Cerrar">✕</button>
+    </div>
+
+    <div class="browser-breadcrumb mono">
+      <template x-for="(crumb, i) in browser.breadcrumb" :key="crumb.path">
+        <span class="breadcrumb-item">
+          <button type="button" class="breadcrumb-link" @click="browse(crumb.path)"
+                  x-text="crumb.name"></button>
+          <span class="breadcrumb-sep" x-show="i < browser.breadcrumb.length - 1">/</span>
+        </span>
+      </template>
+    </div>
+
+    <div class="browser-list">
+      <p class="browser-loading" x-show="browser.loading" x-cloak>
+        Cargando…
+      </p>
+      <p class="browser-error" x-show="browser.error" x-cloak x-text="browser.error"></p>
+      <template x-for="entry in browser.entries" :key="entry.path">
+        <button type="button" class="browser-entry" @click="browse(entry.path)">
+          <span class="browser-entry-icon" aria-hidden="true">▸</span>
+          <span class="browser-entry-name" x-text="entry.name"></span>
+        </button>
+      </template>
+      <p class="browser-empty"
+         x-show="!browser.loading && !browser.error && browser.entries.length === 0"
+         x-cloak>
+        Sin subcarpetas visibles acá.
+      </p>
+    </div>
+
+    {#- Para "dest" agregamos un input opcional: crear una subcarpeta nueva
+        dentro de la actual sin tener que crearla en el SO primero. -#}
+    <div class="browser-subfolder" x-show="browser.field === 'dest'" x-cloak>
+      <label class="browser-subfolder-label">
+        Crear subcarpeta acá (opcional):
+      </label>
+      <input
+        type="text"
+        class="text-input browser-subfolder-input"
+        x-model="browser.newSubfolder"
+        placeholder="prueba_organizada"
+        autocomplete="off"
+        spellcheck="false"
+      >
+    </div>
+
+    <div class="browser-actions">
+      <span class="browser-current mono" x-text="finalBrowserPath()"></span>
+      <div class="browser-actions-buttons">
+        <button type="button" class="button-secondary" @click="closeBrowser()">
+          Cancelar
+        </button>
+        <button type="button" class="button-primary" @click="confirmBrowser()">
+          Seleccionar
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div>{# x-data wrapper #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function setupForm() {
+    return {
+      // Campos del formulario.
+      // La web NO expone flat / no_lossless — siempre organiza por género
+      // (sin subnivel de energía) y sin la carpeta Lossless/ intermedia.
+      // Esos flags los hardcodea el server en /api/start.
+      source: '',
+      models_dir: '',
+      dest: '',
+      simulate: false,
+      move: false,
+
+      // UI state
+      loading: false,
+      error: '',
+      existingJob: false,
+
+      // Estado de validación por campo. ``state`` ∈ {idle, checking, ok, err}.
+      // ``reason`` y ``missing`` los llena /api/check-path.
+      status: {
+        source:     { state: 'idle', reason: '', missing: [] },
+        models_dir: { state: 'idle', reason: '', missing: [] },
+        dest:       { state: 'idle', reason: '', missing: [] },
+      },
+
+      // Timers de debounce para no spamear /api/check-path en cada keystroke.
+      _debounceTimers: { source: null, models_dir: null, dest: null },
+
+      // Estado del explorador de carpetas (modal).
+      browser: {
+        open: false,
+        field: null,                  // 'source' | 'models_dir' | 'dest'
+        fieldLabel: '',
+        path: '',
+        parent: null,
+        breadcrumb: [],               // [{name, path}]
+        entries: [],                  // [{name, path}]
+        newSubfolder: '',             // solo aplica a kind=dest
+        loading: false,
+        error: '',
+      },
+
+      // Llamado en x-init: pre-llena los campos vacíos con las sugerencias
+      // del server y dispara la validación inicial.
+      async init() {
+        try {
+          const r = await fetch('/api/defaults');
+          if (!r.ok) return;
+          const d = await r.json();
+          // SOLO sobreescribimos si el campo está vacío. Si volviste al
+          // setup tras un error, lo que ya tipeaste se respeta.
+          if (!this.source && d.source)         this.source = d.source;
+          if (!this.models_dir && d.models_dir) this.models_dir = d.models_dir;
+          if (!this.dest && d.dest)             this.dest = d.dest;
+          // Validamos lo prellenado (sin debounce — es el boot).
+          if (this.source)     this.validate('source');
+          if (this.models_dir) this.validate('models_dir');
+          if (this.dest)       this.validate('dest');
+        } catch (_) { /* el form sigue siendo usable sin defaults */ }
+      },
+
+      // Debounced: 400ms tras el último keystroke valida contra el server.
+      onPathChange(name) {
+        clearTimeout(this._debounceTimers[name]);
+        // Si el campo quedó vacío, no mostramos nada (vuelve a idle).
+        if (!this[name]) {
+          this.status[name] = { state: 'idle', reason: '', missing: [] };
+          return;
+        }
+        this.status[name].state = 'checking';
+        this._debounceTimers[name] = setTimeout(() => this.validate(name), 400);
+      },
+
+      async validate(name) {
+        const path = this[name];
+        if (!path) {
+          this.status[name] = { state: 'idle', reason: '', missing: [] };
+          return;
+        }
+        // El kind determina la semántica del check en el server.
+        const kind =
+          name === 'models_dir' ? 'models'
+          : name === 'dest'     ? 'dest'
+          :                       'dir';
+        try {
+          const r = await fetch('/api/check-path', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, kind }),
+          });
+          const data = await r.json();
+          this.status[name] = {
+            state: data.ok ? 'ok' : 'err',
+            reason: data.reason || '',
+            missing: data.missing || [],
+          };
+        } catch (e) {
+          this.status[name] = {
+            state: 'err',
+            reason: 'no se pudo validar (¿server caído?)',
+            missing: [],
+          };
+        }
+      },
+
+      statusIcon(name) {
+        const st = this.status[name].state;
+        if (st === 'ok')       return '✓';
+        if (st === 'err')      return '✗';
+        if (st === 'checking') return '…';
+        return '';
+      },
+
+      // ---- Cross-field: relación source ↔ dest -----------------------
+      // Espejo del check del server (_validate_paths_relationship). El
+      // server tiene la palabra final, pero acá mostramos el warning en
+      // vivo y deshabilitamos el submit para evitar el round-trip.
+      get pathRelationshipError() {
+        const s = (this.source || '').replace(/\/+$/, '');
+        const d = (this.dest   || '').replace(/\/+$/, '');
+        if (!s || !d) return '';
+        if (s === d) return 'el destino no puede ser la misma carpeta que el origen.';
+        if (d.startsWith(s + '/')) return 'el destino está dentro del origen — elegí una carpeta fuera de él.';
+        if (s.startsWith(d + '/')) return 'el origen está dentro del destino — esto haría que organize procese 0 archivos.';
+        return '';
+      },
+
+      // ---- Explorador de carpetas (modal) ----------------------------
+      async openBrowser(field) {
+        this.browser.field = field;
+        this.browser.fieldLabel = {
+          source:     'carpeta de música',
+          models_dir: 'carpeta de modelos',
+          dest:       'carpeta destino',
+        }[field];
+        this.browser.newSubfolder = '';
+        this.browser.open = true;
+        // Empieza desde el valor actual del campo (si tiene algo válido) o home.
+        await this.browse(this[field] || '');
+      },
+
+      async browse(path) {
+        this.browser.loading = true;
+        this.browser.error = '';
+        try {
+          const url = '/api/browse' + (path ? '?path=' + encodeURIComponent(path) : '');
+          const r = await fetch(url);
+          if (!r.ok) {
+            // 404 típico cuando el server corre código viejo sin el endpoint:
+            // damos una pista accionable en lugar de un mensaje genérico.
+            const hint = r.status === 404
+              ? ' — probablemente el server está corriendo código viejo. Pará con Ctrl+C y arrancalo de nuevo.'
+              : '';
+            throw new Error(`HTTP ${r.status}${hint}`);
+          }
+          const d = await r.json();
+          this.browser.path = d.path;
+          this.browser.parent = d.parent;
+          this.browser.breadcrumb = d.breadcrumb;
+          this.browser.entries = d.entries;
+        } catch (e) {
+          this.browser.error = e.message || 'no se pudo cargar la carpeta';
+          // Log también, por las dudas.
+          console.error('browse failed', e);
+        } finally {
+          this.browser.loading = false;
+        }
+      },
+
+      closeBrowser() {
+        this.browser.open = false;
+      },
+
+      // Path "definitivo" que se va a devolver al campo. Para dest, si el
+      // user escribió un nombre de subcarpeta, lo concatena.
+      finalBrowserPath() {
+        const base = this.browser.path || '';
+        const sub = (this.browser.newSubfolder || '').trim();
+        if (this.browser.field === 'dest' && sub) {
+          return base.replace(/\/+$/, '') + '/' + sub;
+        }
+        return base;
+      },
+
+      async confirmBrowser() {
+        const field = this.browser.field;
+        const finalPath = this.finalBrowserPath();
+        if (field && finalPath) {
+          this[field] = finalPath;
+          await this.validate(field);
+        }
+        this.closeBrowser();
+      },
+
+      async submit() {
+        this.loading = true;
+        this.error = '';
+        this.existingJob = false;
+
+        try {
+          const res = await fetch('/api/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source: this.source,
+              models_dir: this.models_dir,
+              dest: this.dest,
+              simulate: this.simulate,
+              move: this.move,
+            }),
+          });
+
+          // 202 → job lanzado, ir a la pantalla de progreso. El WS toma
+          // el relevo allí.
+          if (res.status === 202) {
+            window.location.href = '/progress';
+            return;
+          }
+
+          // Cualquier otra cosa: el server respondió con { detail: ... }.
+          let detail = `Error HTTP ${res.status}`;
+          try {
+            const data = await res.json();
+            if (data && data.detail) detail = data.detail;
+          } catch (_) { /* respuesta no-JSON, mantener el default */ }
+
+          if (res.status === 409) {
+            this.existingJob = true;
+          }
+          this.error = detail;
+        } catch (e) {
+          // Fallo de red (server caído, etc).
+          this.error = `No se pudo contactar al servidor: ${e.message}`;
+        } finally {
+          this.loading = false;
+        }
+      },
+    };
+  }
+</script>
+{% endblock %}

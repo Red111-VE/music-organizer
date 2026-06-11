@@ -1,0 +1,323 @@
+{#-
+  Layout base de la interfaz web local.
+
+  Decisiones de diseño:
+  - Tema oscuro editorial refinado — Linear/Vercel territory, no maximalista.
+  - Tipografía distintiva (NO Inter/Roboto/Arial):
+      · Display:  Bricolage Grotesque (variable, opsz axis)
+      · Body:     IBM Plex Sans (carácter técnico, no frío)
+      · Mono:     IBM Plex Mono (genre/arousal/file en lecturas técnicas)
+  - Accent único: rojo RED111 (#ff2d2d). Aparece en active step, ::selection,
+    glow del dot, y el gradiente cálido superior-derecho. NO se distribuye
+    por toda la UI — es un acento puntual, no relleno.
+  - Atmósfera: dos gradientes radiales muy suaves (top-right cálido,
+    bottom-left frío) sobre near-black. Evita la sensación de "pantalla
+    de login plana".
+  - Header como masthead: project name + steps a la izquierda, brand
+    "RED111" sublimada a la derecha (signature, no compite con el contenido).
+  - Una entrada animada por página (page-enter), no scattered
+    micro-interactions.
+  - HTMX + Alpine vía CDN (defer), no build step.
+
+  Bloques disponibles para las pantallas hijas:
+  - {% block title %}        — el <title>, se concatena con "· RED111".
+  - {% block content %}      — contenido principal dentro de <main>.
+  - {% block scripts %}      — JS específico de la página (al final del body).
+  - Variable de contexto ``step`` (1/2/3) — resalta el step indicator.
+-#}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}music-organizer{% endblock %} · RED111</title>
+  <meta name="color-scheme" content="dark">
+
+  {#- Fuentes. preconnect + un solo CSS request con las tres familias. -#}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+  {#- HTMX + Alpine. defer para que el HTML pinte primero. -#}
+  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+  <script src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
+
+  {#- Estilos de componentes detallados — viven en app.css. Acá abajo solo
+      los tokens del sistema y el shell estructural (header/main/footer). -#}
+  <link rel="stylesheet" href="/static/app.css">
+
+  <style>
+    /* ---- Tokens del sistema de diseño -------------------------------- */
+    :root {
+      /* Color: near-black con calidez ligera (no gris frío puro). */
+      --bg:            #0a0a0b;
+      --bg-elev-1:     #121215;   /* header sticky                       */
+      --bg-elev-2:     #16161a;   /* cards / paneles                     */
+      --bg-elev-3:     #1c1c21;   /* inputs / wells                      */
+      --border:        #25252c;
+      --border-strong: #34343c;
+
+      --text:   #e8e8ec;
+      --text-2: #9b9ba5;
+      --text-3: #5c5c66;
+
+      --accent:      #ff2d2d;                  /* RED111 — un solo acento */
+      --accent-soft: rgba(255, 45, 45, 0.12);
+      --accent-line: rgba(255, 45, 45, 0.35);
+
+      --ok:   #34d399;
+      --warn: #fbbf24;
+      --err:  #ef4444;
+
+      /* Tipografía */
+      --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+      --font-sans:    "IBM Plex Sans", system-ui, sans-serif;
+      --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
+
+      /* Espaciado (base 4) */
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --space-7: 48px;
+      --space-8: 64px;
+      --space-9: 96px;
+
+      /* Radios */
+      --radius-sm: 4px;
+      --radius:    8px;
+      --radius-lg: 14px;
+
+      /* Anchos */
+      --content-max: 920px;
+    }
+
+    /* ---- Reset mínimo ------------------------------------------------ */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body, h1, h2, h3, h4, p, ul, ol, figure, blockquote {
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ---- Shell + atmósfera ------------------------------------------ */
+    html { background: var(--bg); }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.55;
+      letter-spacing: -0.005em;
+      font-feature-settings: "ss01", "cv11";
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+
+      /* Dos gradientes radiales muy suaves para evitar el fondo plano.
+         El rojo arriba a la derecha referencia el accent; el cool azul
+         de abajo a la izquierda balancea sin competir. */
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(ellipse 60% 50% at 100% 0%,
+          rgba(255, 45, 45, 0.06), transparent 70%),
+        radial-gradient(ellipse 50% 40% at 0% 100%,
+          rgba(80, 90, 200, 0.045), transparent 70%);
+      background-attachment: fixed;
+    }
+
+    /* ---- Header / masthead ----------------------------------------- */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-6);
+      /* Más aireado: vertical 24px en vez de 16 — la navbar respira y el
+         logo + wordmark tienen presencia sin verse comprimidos. */
+      padding: var(--space-5) var(--space-7);
+
+      border-bottom: 1px solid var(--border);
+      background: rgba(10, 10, 11, 0.72);
+      backdrop-filter: blur(10px) saturate(140%);
+      -webkit-backdrop-filter: blur(10px) saturate(140%);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: var(--space-6);
+    }
+
+    /* Wordmark: ``music·organizer`` con el separador en accent. Pasa de
+       sans 15px a display 20px — más wordmark editorial, menos label
+       técnico. El dot rojo en medio es eco visual del dot del step
+       indicator y del 111 del logo: un solo elemento de marca repetido. */
+    .project-name {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 20px;
+      letter-spacing: -0.025em;
+      line-height: 1;
+      color: var(--text);
+      font-variation-settings: "opsz" 24;
+    }
+    .project-name .sep {
+      color: var(--accent);
+      font-weight: 400;
+      margin: 0 0.18em;
+      display: inline-block;
+      transform: translateY(-0.06em);
+    }
+
+    .step-indicator {
+      display: flex;
+      gap: var(--space-5);
+
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .step-indicator .step {
+      color: var(--text-3);
+      transition: color 200ms ease;
+    }
+    .step-indicator .step.is-active {
+      color: var(--text);
+    }
+    /* Dot rojo + glow antes del step activo — un único momento de color
+       en el header, no decoración distribuida. */
+    .step-indicator .step.is-active::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-right: var(--space-2);
+      vertical-align: 1px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent), 0 0 2px var(--accent);
+    }
+
+    /* Brand mark: el logo RED111 — "RED" en --text, "111" en --accent, con
+       una línea roja debajo. Display font 700 para mantener el peso del
+       logo original; ``font-variation-settings: opsz`` afina el trazo al
+       tamaño chico del header. Si en el futuro alguien quiere usar la
+       versión PNG/SVG real del logo, basta con reemplazar el contenido
+       del <span class="brand-mark"> por <img src="/static/red111-logo.svg">
+       y borrar este bloque. */
+    .brand-mark {
+      display: inline-block;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 22px;
+      line-height: 1;
+      letter-spacing: -0.015em;
+      text-transform: uppercase;
+      font-variation-settings: "opsz" 24;
+      color: var(--text);
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 6px;
+    }
+    .brand-mark > .nums {
+      color: var(--accent);
+    }
+
+    /* ---- Main ------------------------------------------------------- */
+    main {
+      flex: 1;
+      width: 100%;
+      max-width: var(--content-max);
+      margin: 0 auto;
+      padding: var(--space-7) var(--space-6) var(--space-8);
+
+      /* Un único gesto de entrada por página: cubic-bezier "ease-out
+         expo-ish" para que sea ligero y deliberado, no muelle. */
+      animation: page-enter 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    @keyframes page-enter {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ---- Footer ----------------------------------------------------- */
+    .site-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-4);
+      padding: var(--space-4) var(--space-6);
+
+      border-top: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-3);
+      letter-spacing: 0.08em;
+    }
+    .site-footer .meta { text-transform: uppercase; }
+
+    /* ---- Tipografía base de cuerpo --------------------------------- */
+    h1, h2, h3 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    code, kbd, samp, .mono { font-family: var(--font-mono); }
+    a {
+      color: var(--text);
+      text-decoration: underline;
+      text-decoration-color: var(--border-strong);
+      text-underline-offset: 3px;
+      transition: text-decoration-color 200ms ease;
+    }
+    a:hover { text-decoration-color: var(--accent); }
+
+    /* Selection en accent — micro-detalle de branding consistente. */
+    ::selection { background: var(--accent-soft); color: var(--text); }
+
+    /* Scrollbar discreta, no decorativa — solo evita el blanco default. */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 5px;
+    }
+    ::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-left">
+      <span class="project-name" aria-label="music-organizer">music<span class="sep" aria-hidden="true">·</span>organizer</span>
+      <nav class="step-indicator" aria-label="Pasos del flujo">
+        <span class="step{% if step == 1 %} is-active{% endif %}">01 · Setup</span>
+        <span class="step{% if step == 2 %} is-active{% endif %}">02 · Progress</span>
+        <span class="step{% if step == 3 %} is-active{% endif %}">03 · Results</span>
+      </nav>
+    </div>
+    <span class="brand-mark" aria-label="RED111">RED<span class="nums">111</span></span>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <span>music-organizer v0.1.0</span>
+    <span class="meta">local · async · single-user</span>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

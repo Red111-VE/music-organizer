@@ -1,0 +1,467 @@
+{#-
+  Pantalla 2 — Progreso en vivo.
+
+  Flujo de datos:
+  1. Al cargar, GET /api/state → snapshot completo. Tomamos el estado
+     DERIVADO directamente (status, phase, phases.done/total, tracks,
+     result, error). NO re-derivamos desde snapshot.events.
+  2. Abrimos WebSocket /api/ws. ``state.subscribe()`` del server replay
+     el buffer al conectar, así que los primeros N eventos del WS son
+     los mismos que snapshot.events. Saltamos esos N (replayCountToSkip)
+     y aplicamos solo los nuevos (applyEvent) que sí extienden el estado.
+  3. Reconexión: si el WS se cae mientras status==running, esperamos
+     1.5 s y volvemos a hacer bootFromSnapshot + connectWS — así
+     resincronizamos si nos perdimos eventos durante la caída. Cap a
+     5 intentos.
+
+  La UI se reconstruye totalmente desde el snapshot, así que recargar
+  la pestaña a mitad del job no pierde progreso ni histograma.
+-#}
+{% extends "base.html" %}
+
+{% block title %}Progreso{% endblock %}
+
+{% block content %}
+<div x-data="progressView()" x-init="init()">
+
+  <header class="page-intro">
+    <h1 x-text="titleText">Análisis en curso</h1>
+    <p class="lead" x-text="leadText"></p>
+  </header>
+
+  {#- Caso: error de carga del snapshot (server caído / route rota). -#}
+  <section class="form-error" x-show="bootError" x-cloak role="alert">
+    <span x-text="bootError"></span>
+  </section>
+
+  {#- Caso: sin job activo. -#}
+  <section class="empty-state" x-show="status === 'idle'" x-cloak>
+    <a href="/" class="button-secondary">
+      <span class="button-arrow">←</span>
+      Iniciar un análisis
+    </a>
+  </section>
+
+  {#- Bloque de fase actual: visible mientras corre, oculto si terminó. -#}
+  <section class="phase-block" x-show="status === 'running' && !modelsLoading" x-cloak>
+    <div class="phase-header">
+      <span class="phase-label">
+        <span class="phase-num" x-text="`Paso ${currentPhaseNum} de 3`"></span>
+        <span class="phase-dot">·</span>
+        <span class="phase-name" x-text="(phase || '—').toUpperCase()"></span>
+      </span>
+      <span class="phase-pct" x-text="`${progressPercent}%`"></span>
+    </div>
+
+    <div class="progress-bar" role="progressbar"
+         :aria-valuenow="currentPhaseProgress.done"
+         :aria-valuemax="currentPhaseProgress.total">
+      <div class="progress-fill" :style="`width: ${progressPercent}%`"></div>
+    </div>
+
+    <div class="phase-footer">
+      <span class="current-file mono" x-text="currentFile || '—'"></span>
+      <span class="phase-counts mono"
+            x-text="`${currentPhaseProgress.done} / ${currentPhaseProgress.total}`"></span>
+    </div>
+  </section>
+
+  {#- Bloque "cargando modelos" — los ~10-15s iniciales de Essentia. -#}
+  <section class="phase-block phase-block--loading" x-show="modelsLoading" x-cloak>
+    <span class="dot-pulse" aria-hidden="true"></span>
+    <span class="phase-loading-text">Cargando modelos de Essentia</span>
+    <span class="phase-loading-hint">~10-15 segundos</span>
+  </section>
+
+  {#- Acciones: cancelar mientras corre, CTAs cuando termina. -#}
+  <div class="phase-actions" x-show="status === 'running'" x-cloak>
+    <button
+      type="button"
+      class="button-secondary"
+      @click="cancel()"
+      :disabled="cancelling"
+    >
+      <span x-show="!cancelling">Cancelar</span>
+      <span x-show="cancelling" x-cloak>Cancelando…</span>
+    </button>
+  </div>
+
+  <div class="phase-actions" x-show="status === 'done'" x-cloak>
+    <a href="/results" class="button-primary">
+      <span>Ver resultados</span>
+      <span class="button-arrow" aria-hidden="true">→</span>
+    </a>
+  </div>
+
+  <div class="phase-actions"
+       x-show="status === 'error' || status === 'cancelled'" x-cloak>
+    <a href="/" class="button-secondary">
+      <span class="button-arrow" aria-hidden="true">←</span>
+      <span>Volver a inicio</span>
+    </a>
+  </div>
+
+  {#- Histograma de energía en vivo. Aparece cuando ya hay tracks. -#}
+  <section class="form-section histogram-section"
+           x-show="tracks.length > 0" x-cloak>
+    <div class="section-header">
+      <span class="section-label">Distribución de energía</span>
+      <span class="section-rule"></span>
+      <span class="section-count mono" x-text="`${tracks.length} pistas`"></span>
+    </div>
+
+    <div class="histogram">
+      <template x-for="level in ['BAJA', 'MEDIA', 'ALTA', 'MUY ALTA']" :key="level">
+        <div class="histogram-row" :data-level="level">
+          <span class="histogram-label" x-text="level"></span>
+          <div class="histogram-bar">
+            <div class="histogram-fill"
+                 :style="`width: ${(histogram[level] / histogramMax) * 100}%`">
+            </div>
+          </div>
+          <span class="histogram-count mono" x-text="histogram[level]"></span>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  {#- Log estilo terminal. Visible siempre que haya al menos un evento. -#}
+  <section class="form-section log-section" x-show="log.length > 0" x-cloak>
+    <div class="section-header">
+      <span class="section-label">Log</span>
+      <span class="section-rule"></span>
+      <span class="section-count mono" x-text="`últimos ${log.length}`"></span>
+    </div>
+    <div class="log" x-ref="logBox">
+      <template x-for="(ev, i) in log" :key="i">
+        <div class="log-line" :class="logLineClass(ev)" x-text="formatEvent(ev)"></div>
+      </template>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function progressView() {
+    return {
+      // ---- Estado derivado ---------------------------------------------
+      status: 'idle',
+      phase: null,
+      phases: {
+        tag:      { done: 0, total: 0 },
+        enrich:   { done: 0, total: 0 },
+        organize: { done: 0, total: 0 },
+      },
+      tracks: [],                 // TrackPoint[] para histograma
+      result: null,               // { tag_ok, tag_err, report } al done
+      error: null,                // mensaje en error/cancelled
+      modelsLoading: false,
+      currentFile: '',
+
+      // ---- Log (UI) ----------------------------------------------------
+      log: [],                    // últimos ~100 eventos para mostrar
+
+      // ---- Bookkeeping del WS -----------------------------------------
+      ws: null,
+      replayCountToSkip: 0,       // eventos del WS que ignoramos (replay del buffer)
+      wsEventsReceived: 0,
+      reconnectAttempts: 0,
+      maxReconnect: 5,
+
+      // ---- UI state ----------------------------------------------------
+      cancelling: false,
+      bootError: '',
+
+      // ==================================================================
+      // Lifecycle
+      // ==================================================================
+
+      async init() {
+        await this.bootFromSnapshot();
+        if (!this.bootError) this.connectWS();
+      },
+
+      async bootFromSnapshot() {
+        try {
+          const res = await fetch('/api/state');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const snap = await res.json();
+
+          this.status        = snap.status;
+          this.phase         = snap.phase;
+          this.phases        = snap.phases;
+          this.tracks        = snap.tracks;
+          this.result        = snap.result;
+          this.error         = snap.error;
+          this.modelsLoading = this.deriveModelsLoading(snap.events);
+          this.currentFile   = this.deriveCurrentFile(snap.events);
+          this.log           = snap.events.slice(-100);
+
+          // El WS replay incluirá estos mismos eventos. Los saltamos.
+          this.replayCountToSkip = snap.events.length;
+          this.wsEventsReceived  = 0;
+          this.bootError         = '';
+        } catch (e) {
+          this.bootError = `No se pudo cargar el estado: ${e.message}`;
+        }
+      },
+
+      connectWS() {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const url = `${proto}://${location.host}/api/ws`;
+        this.ws = new WebSocket(url);
+
+        this.ws.onopen = () => {
+          // Conexión OK: reseteamos el contador de reintentos.
+          this.reconnectAttempts = 0;
+        };
+
+        this.ws.onmessage = (msg) => {
+          this.wsEventsReceived++;
+          // Saltar los primeros N: son el replay del buffer que ya
+          // aplicamos vía snapshot.
+          if (this.wsEventsReceived <= this.replayCountToSkip) return;
+
+          let ev;
+          try { ev = JSON.parse(msg.data); }
+          catch (e) { return; }     // basura, ignorar
+
+          this.applyEvent(ev);
+          this.appendLog(ev);
+        };
+
+        this.ws.onclose = () => {
+          this.ws = null;
+          // Si el job terminó (done/error/cancelled), no reconectamos.
+          // Idle también descarta — no hay nada que escuchar.
+          if (this.status !== 'running') return;
+          if (this.reconnectAttempts >= this.maxReconnect) return;
+          this.reconnectAttempts++;
+          setTimeout(() => this.reconnect(), 1500);
+        };
+
+        this.ws.onerror = () => { /* dispara onclose; nada más que hacer */ };
+      },
+
+      async reconnect() {
+        // Re-fetch snapshot para resincronizar — el server pudo haber
+        // emitido eventos mientras estábamos desconectados, y queremos
+        // que el replayCountToSkip refleje el buffer actual.
+        await this.bootFromSnapshot();
+        if (!this.bootError) this.connectWS();
+      },
+
+      // ==================================================================
+      // Aplicar evento al estado (espejo de lo que hace state.py)
+      // ==================================================================
+
+      applyEvent(ev) {
+        switch (ev.event) {
+          case 'start':
+            this.status = 'running';
+            break;
+          case 'models_loading':
+            this.modelsLoading = true;
+            break;
+          case 'models_loaded':
+            this.modelsLoading = false;
+            break;
+          case 'phase':
+            if (this.phases[ev.phase]) {
+              this.phase = ev.phase;
+              this.phases[ev.phase].total = ev.total || 0;
+              this.phases[ev.phase].done = 0;
+            }
+            break;
+          case 'progress':
+            if (this.phases[ev.phase]) {
+              this.phases[ev.phase].done = ev.done || this.phases[ev.phase].done;
+            }
+            if (ev.file) this.currentFile = ev.file;
+            // Solo en tag, solo éxito, solo si trae arousal: alimenta histograma.
+            if (ev.phase === 'tag' && ev.status === 'ok' && 'arousal' in ev) {
+              this.tracks.push({
+                file: ev.file || '',
+                genre: ev.genre || '',
+                energy_level: ev.energy_level || '',
+                arousal: ev.arousal,
+                confidence: ev.confidence || 0,
+              });
+            }
+            break;
+          case 'done':
+            this.status = 'done';
+            this.result = {
+              tag_ok: ev.tag_ok,
+              tag_err: ev.tag_err,
+              report: ev.report || null,
+            };
+            break;
+          case 'error':
+            this.status = 'error';
+            this.error = ev.message || 'error desconocido';
+            break;
+          case 'cancelled':
+            this.status = 'cancelled';
+            this.error = ev.message || 'cancelado';
+            break;
+        }
+      },
+
+      // ==================================================================
+      // Log
+      // ==================================================================
+
+      appendLog(ev) {
+        this.log.push(ev);
+        if (this.log.length > 100) this.log.shift();
+        // Auto-scroll solo si el usuario está cerca del fondo — respeta
+        // a quien scrolleó arriba para leer historia.
+        this.$nextTick(() => {
+          const el = this.$refs.logBox;
+          if (!el) return;
+          const near = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+          if (near) el.scrollTop = el.scrollHeight;
+        });
+      },
+
+      formatEvent(ev) {
+        switch (ev.event) {
+          case 'start':           return '→ pipeline iniciado';
+          case 'models_loading':  return '⋯ cargando modelos de Essentia…';
+          case 'models_loaded':   return '✓ modelos cargados';
+          case 'phase':           return `▸ ${ev.phase}  total=${ev.total}`;
+          case 'progress': {
+            const f = ev.file || '—';
+            const extra = ev.genre
+              ? `  ${ev.genre} · ${ev.energy_level || '?'} · ${ev.arousal ?? '?'}`
+              : (ev.motivo ? `  ${ev.motivo}` : '');
+            const mark = ev.status === 'ok' ? ' ' : '!';
+            return `  ${mark} ${String(ev.done).padStart(4)}/${ev.total}  ${f}${extra}`;
+          }
+          case 'done':            return `✓ done  tag_ok=${ev.tag_ok}  tag_err=${ev.tag_err}`;
+          case 'error':           return `✗ error: ${ev.message}`;
+          case 'cancelled':       return `✗ cancelled: ${ev.message}`;
+          default:                return JSON.stringify(ev);
+        }
+      },
+
+      logLineClass(ev) {
+        if (ev.event === 'error' || ev.event === 'cancelled') return 'is-error';
+        if (ev.event === 'progress' && ev.status === 'error') return 'is-error';
+        if (ev.event === 'done')        return 'is-ok';
+        if (ev.event === 'models_loaded') return 'is-muted';
+        if (ev.event === 'models_loading') return 'is-muted';
+        return '';
+      },
+
+      // ==================================================================
+      // Derivaciones desde snapshot.events (al hidratar)
+      // ==================================================================
+
+      deriveModelsLoading(events) {
+        // El último ``models_loading`` sin ``models_loaded`` posterior.
+        let loading = false;
+        for (const e of events) {
+          if (e.event === 'models_loading') loading = true;
+          else if (e.event === 'models_loaded') loading = false;
+        }
+        return loading;
+      },
+
+      deriveCurrentFile(events) {
+        for (let i = events.length - 1; i >= 0; i--) {
+          if (events[i].event === 'progress' && events[i].file) {
+            return events[i].file;
+          }
+        }
+        return '';
+      },
+
+      // ==================================================================
+      // Acciones
+      // ==================================================================
+
+      async cancel() {
+        if (this.cancelling) return;
+        this.cancelling = true;
+        try {
+          await fetch('/api/cancel', { method: 'POST' });
+          // La transición a cancelled la trae el WS — no la forzamos acá.
+        } catch (e) {
+          console.error('cancel failed', e);
+        } finally {
+          this.cancelling = false;
+        }
+      },
+
+      // ==================================================================
+      // Computed (getters)
+      // ==================================================================
+
+      get currentPhaseNum() {
+        const order = ['tag', 'enrich', 'organize'];
+        const idx = order.indexOf(this.phase);
+        return idx < 0 ? 0 : idx + 1;
+      },
+
+      get currentPhaseProgress() {
+        if (!this.phase || !this.phases[this.phase]) return { done: 0, total: 0 };
+        return this.phases[this.phase];
+      },
+
+      get progressPercent() {
+        const p = this.currentPhaseProgress;
+        if (!p.total) return 0;
+        return Math.min(100, Math.round((p.done / p.total) * 100));
+      },
+
+      get histogram() {
+        const b = { 'BAJA': 0, 'MEDIA': 0, 'ALTA': 0, 'MUY ALTA': 0 };
+        for (const t of this.tracks) {
+          if (t.energy_level in b) b[t.energy_level]++;
+        }
+        return b;
+      },
+
+      get histogramMax() {
+        return Math.max(1, ...Object.values(this.histogram));
+      },
+
+      get titleText() {
+        switch (this.status) {
+          case 'idle':      return 'Sin job activo';
+          case 'running':   return 'Análisis en curso';
+          case 'done':      return 'Análisis completo';
+          case 'error':     return 'Error en el pipeline';
+          case 'cancelled': return 'Cancelado';
+          default:          return 'Pipeline';
+        }
+      },
+
+      get leadText() {
+        if (this.status === 'idle')
+          return 'No hay un análisis corriendo. Iniciá uno desde la pantalla de inicio.';
+        if (this.status === 'running') {
+          if (this.modelsLoading)
+            return 'Cargando modelos de Essentia. Esto tarda ~10–15 segundos antes del primer análisis.';
+          return 'El job vive en el servidor — podés recargar la pestaña sin perder progreso. Cancelable desde el botón.';
+        }
+        if (this.status === 'done') {
+          if (this.result) {
+            const ok = this.result.tag_ok ?? 0;
+            const err = this.result.tag_err ?? 0;
+            return `${ok} pista${ok === 1 ? '' : 's'} OK · ${err} error${err === 1 ? '' : 'es'}. Resultados disponibles en la siguiente pantalla.`;
+          }
+          return 'Pipeline completado.';
+        }
+        if (this.status === 'error')      return this.error || 'Algo falló durante la corrida.';
+        if (this.status === 'cancelled')  return this.error || 'El job fue cancelado por el usuario.';
+        return '';
+      },
+    };
+  }
+</script>
+{% endblock %}
