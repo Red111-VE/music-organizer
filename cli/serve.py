@@ -135,13 +135,16 @@ def serve_command(
     # Uvicorn bloquea hasta SIGINT/SIGTERM. Pasamos la app como string
     # porque es lo que ``reload=True`` requiere (uvicorn re-importa cada
     # vez que detecta cambios). Sin reload también funciona como string.
-    run_kwargs: dict[str, object] = {
-        "host": host,
-        "port": port,
-        "log_level": "info",
-    }
+    # Dos llamadas explícitas (no un dict de kwargs desempacado): mypy no
+    # puede tipar ``**dict[str, object]`` contra la firma de uvicorn.run.
     if reload:
-        run_kwargs["reload"] = True
-        run_kwargs["reload_dirs"] = _RELOAD_DIRS
-
-    uvicorn.run("web.main:app", **run_kwargs)
+        uvicorn.run(
+            "web.main:app",
+            host=host,
+            port=port,
+            log_level="info",
+            reload=True,
+            reload_dirs=_RELOAD_DIRS,
+        )
+    else:
+        uvicorn.run("web.main:app", host=host, port=port, log_level="info")

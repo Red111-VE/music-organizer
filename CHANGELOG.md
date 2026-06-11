@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Interfaz web local** (`music-organizer serve --open`): el pipeline
+  completo con progreso en vivo por WebSocket (fase, archivo en curso,
+  histograma de energía en tiempo real — el análisis sobrevive si se
+  cierra la pestaña), setup con validación de rutas en vivo y explorador
+  de carpetas integrado, y pantalla de resultados con histograma
+  interactivo de arousal y sliders de umbrales (paridad numérica exacta
+  con `recalibrate --auto-calibrate`, verificada sobre los 471 arousals
+  reales). Loopback por defecto; exponer requiere `--host 0.0.0.0`
+  explícito. Desde la web, `organize` siempre usa una carpeta por género
+  (la energía queda en el tag) y sin subcarpeta `Lossless/`; el CLI
+  conserva ambos flags.
+- **Resolver de tracklists** (`music-organizer resolve` + panel web al
+  lado del análisis): resuelve tracklists pegados o desde URL
+  (descripción Y comentarios de YouTube, descripción de Mixcloud) contra
+  Deezer → iTunes → YouTube con matching difuso calibrado contra las APIs
+  reales; reporte CSV (`_REPORTE_TRACKLIST.csv`); tracker persistente de
+  unreleased (`~/.music-organizer/unreleased.json`) con
+  `resolve --recheck`. Sin costos: Deezer/iTunes/Mixcloud no requieren
+  credenciales; la key de YouTube es opcional y gratuita
+  (`YOUTUBE_API_KEY`). SoundCloud/Beatport quedan fuera (APIs cerradas) y
+  1001Tracklists no se scrapea (ToS).
+- Nueva dependencia: `rapidfuzz` (matching difuso del resolver).
+
 ### Fixed
 
 - `organize`: el contador `sin tag / nivel` del resumen ya no sobre-cuenta

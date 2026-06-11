@@ -46,7 +46,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from web.routes import api, pages
+from web.routes import api, pages, resolver
 from web.state import state
 
 
@@ -106,10 +106,12 @@ def create_app() -> FastAPI:
     app.state.templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 
     # Routers. ``pages`` sirve HTML en la raíz (``/``, ``/progress``,
-    # ``/results``); ``api`` agrupa JSON + WebSocket bajo ``/api``. Hoy
-    # ambos son stubs; los rellenamos en los próximos componentes.
+    # ``/results``, ``/resolver``); ``api`` agrupa el JSON + WebSocket del
+    # pipeline bajo ``/api``; ``resolver`` agrupa los endpoints del
+    # resolver de tracklists bajo ``/api/resolver``.
     app.include_router(pages.router)
     app.include_router(api.router, prefix="/api")
+    app.include_router(resolver.router, prefix="/api/resolver")
 
     return app
 

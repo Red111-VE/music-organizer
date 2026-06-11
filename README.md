@@ -112,6 +112,47 @@ music-organizer pipeline "/ruta/a/musica" \
 music-organizer recalibrate "/ruta/a/musica" --auto-calibrate
 ```
 
+### Interfaz web local
+
+Todo el pipeline también corre desde una interfaz web local (tema oscuro,
+progreso en vivo):
+
+```bash
+pip install -e '.[web]'
+music-organizer serve --open       # abre http://127.0.0.1:8000
+```
+
+- Setup con validación de rutas en vivo y explorador de carpetas integrado.
+- Progreso en vivo por WebSocket: fase actual, archivo en curso y el
+  histograma de energía creciendo en tiempo real. El análisis sobrevive
+  aunque cierres la pestaña.
+- Resultados con histograma interactivo de *arousal* y sliders de umbrales —
+  el auto-calibrado usa exactamente los mismos números que
+  `recalibrate --auto-calibrate`.
+
+### Resolver de tracklists
+
+¿Escuchaste un set y querés los tracks? Pegá el tracklist (o el link del
+set) y lo busca track por track en Deezer, iTunes y YouTube — gratis:
+
+```bash
+music-organizer resolve tracklist.txt          # archivo
+music-organizer resolve "https://youtu.be/…"   # link del set (YouTube/Mixcloud)
+pbpaste | music-organizer resolve -            # portapapeles
+music-organizer resolve --recheck              # ¿salió algún unreleased?
+```
+
+- Tolera el formato real de los tracklists: numeración, timestamps, sellos,
+  remixes, líneas `ID - ID`.
+- Lo que ningún catálogo tiene queda en un tracker persistente;
+  `--recheck` avisa cuando un unreleased por fin sale.
+- **Expectativa honesta**: los IDs y los unreleased no existen en catálogos
+  públicos — encontrar todo es imposible por diseño, no un error.
+- Deezer, iTunes y Mixcloud no necesitan credenciales. Para leer links de
+  YouTube y para buscar en YouTube hace falta una API key gratuita
+  (`export YOUTUBE_API_KEY=…`); sin ella, todo lo demás funciona igual.
+- También vive en la web: panel propio al lado del análisis.
+
 ### Documentación
 
 - [Licencias de los modelos](docs/MODELS.md)
@@ -220,6 +261,47 @@ music-organizer pipeline "/path/to/music" \
 ```bash
 music-organizer recalibrate "/path/to/music" --auto-calibrate
 ```
+
+### Local web UI
+
+The whole pipeline is also available through a local web interface (dark
+theme, live progress):
+
+```bash
+pip install -e '.[web]'
+music-organizer serve --open       # opens http://127.0.0.1:8000
+```
+
+- Setup with live path validation and a built-in folder browser.
+- Live progress over WebSocket: current phase, current file, and the
+  energy histogram growing in real time. The analysis survives closing
+  the tab.
+- Results screen with an interactive *arousal* histogram and threshold
+  sliders — auto-calibrate uses the exact same numbers as
+  `recalibrate --auto-calibrate`.
+
+### Tracklist resolver
+
+Heard a set and want the tracks? Paste the tracklist (or the set's link)
+and it looks up every track on Deezer, iTunes and YouTube — for free:
+
+```bash
+music-organizer resolve tracklist.txt          # file
+music-organizer resolve "https://youtu.be/…"   # set link (YouTube/Mixcloud)
+pbpaste | music-organizer resolve -            # clipboard
+music-organizer resolve --recheck              # did any unreleased come out?
+```
+
+- Handles real-world tracklist formats: numbering, timestamps, labels,
+  remixes, `ID - ID` lines.
+- Whatever no catalog has goes into a persistent tracker; `--recheck`
+  tells you when an unreleased track finally drops.
+- **Honest expectations**: IDs and unreleased tracks don't exist in public
+  catalogs — finding everything is impossible by design, not a bug.
+- Deezer, iTunes and Mixcloud need no credentials. Reading YouTube links
+  and searching YouTube require a free API key
+  (`export YOUTUBE_API_KEY=…`); without it, everything else still works.
+- Also lives in the web UI: its own panel right next to the analysis.
 
 ### Documentation
 

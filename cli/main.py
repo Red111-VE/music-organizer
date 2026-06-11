@@ -10,7 +10,7 @@ Separación estricta de responsabilidades:
 - ``core/`` hace el trabajo computacional sin saber nada de Click ni de CSV.
 
 Comandos registrados: ``tag``, ``enrich``, ``organize``, ``recalibrate``,
-``pipeline``, ``serve``.
+``pipeline``, ``serve``, ``resolve``.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from cli.enrich import enrich_command
 from cli.organize import organize_command
 from cli.pipeline import pipeline_command
 from cli.recalibrate import recalibrate_command
+from cli.resolve import resolve_command
 from cli.serve import serve_command
 from cli.tag import tag_command
 
@@ -41,6 +42,7 @@ def cli() -> None:
       pipeline    — corre los 3 pasos en orden.
       recalibrate — reajusta niveles de energía sin re-analizar audio.
       serve       — interfaz web local (histograma + sliders).
+      resolve     — resuelve un tracklist contra Deezer/iTunes/YouTube.
     """
 
 
@@ -50,6 +52,7 @@ cli.add_command(organize_command)
 cli.add_command(recalibrate_command)
 cli.add_command(pipeline_command)
 cli.add_command(serve_command)
+cli.add_command(resolve_command)
 
 
 if __name__ == "__main__":

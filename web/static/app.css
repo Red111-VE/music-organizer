@@ -1315,3 +1315,241 @@
   color: var(--text-3);
   margin-left: var(--space-2);
 }
+
+
+/* ========================================================================
+   Resolver de tracklists (pantalla 4)
+   ======================================================================== */
+
+/* Textarea del tracklist: mono (es texto técnico línea-por-línea),
+   redimensionable solo en vertical. */
+.tracklist-input {
+  resize: vertical;
+  min-height: 140px;
+  line-height: 1.7;
+}
+
+/* Tabla de resultados: viva (las filas se pintan al llegar cada
+   respuesta), densa pero legible. */
+.rtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rtable th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.rtable td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.rtable .num { text-align: right; }
+.rtable .dim { color: var(--text-3); }
+
+.provider-tag {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-left: var(--space-2);
+  padding: 1px 5px;
+  background: var(--bg-elev-3);
+  border-radius: var(--radius-sm);
+}
+
+.row-link {
+  font-size: 12px;
+  color: var(--text-2);
+  text-decoration-color: var(--border-strong);
+  white-space: nowrap;
+}
+.row-link:hover { text-decoration-color: var(--accent); }
+
+/* Chips de estado: mismos colores semánticos que el CLI
+   (ok verde, dudoso amarillo, no-encontrado rojo, id apagado). */
+.status-chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.status-chip[data-status="ok"] {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.07);
+}
+.status-chip[data-status="dudoso"] {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.07);
+}
+.status-chip[data-status="no-encontrado"] {
+  color: var(--err);
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.07);
+}
+.status-chip[data-status="pendiente"] {
+  color: var(--text-3);
+  border-style: dashed;
+}
+
+/* Resumen al pie de la tabla: chips con conteos. */
+.resolve-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.count-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+.count-chip[data-status="ok"]            { color: var(--ok); }
+.count-chip[data-status="dudoso"]        { color: var(--warn); }
+.count-chip[data-status="no-encontrado"] { color: var(--err); }
+
+/* Lista del tracker de unreleased. */
+.unreleased-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.unreleased-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.unreleased-name {
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unreleased-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+/* ========================================================================
+   Página principal: dos herramientas lado a lado.
+
+   main--wide ensancha el contenedor solo en la principal; tools-grid
+   parte el espacio en dos columnas con un divisor vertical editorial.
+   En pantallas angostas colapsa a una columna y el divisor pasa a
+   horizontal.
+   ======================================================================== */
+
+main.main--wide {
+  max-width: 1480px;
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--space-8);
+  align-items: start;
+}
+
+.tools-grid > .tool-col + .tool-col {
+  border-left: 1px solid var(--border);
+  padding-left: var(--space-8);
+}
+
+/* El form de análisis ocupa su columna completa (su max-width de 580px
+   era para la página angosta de una sola columna). */
+.tool-col .setup-form {
+  max-width: none;
+}
+
+@media (max-width: 1100px) {
+  .tools-grid {
+    grid-template-columns: 1fr;
+  }
+  .tools-grid > .tool-col + .tool-col {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--border-strong);
+    padding-top: var(--space-7);
+    margin-top: var(--space-8);
+  }
+}
+
+/* Intro de cada columna: kicker + título + lead — misma jerarquía
+   visual para las dos herramientas. */
+.tool-intro {
+  margin-bottom: var(--space-6);
+}
+
+.tool-title {
+  font-size: 30px;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variation-settings: "opsz" 36;
+  margin: var(--space-3) 0 var(--space-3);
+}
+
+.tool-lead {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 60ch;
+  margin: 0;
+}
+
+.tool-lead a {
+  color: var(--text);
+  text-decoration-color: var(--accent-line);
+}
+
+/* "¡salió!" tras un recheck. */
+.recheck-found {
+  margin: var(--space-4) 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.recheck-found-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: rgba(52, 211, 153, 0.05);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  border-radius: var(--radius);
+  font-size: 13px;
+}

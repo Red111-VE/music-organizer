@@ -1,0 +1,33 @@
+{#-
+  Pantalla 4 — Resolver de tracklists (vista dedicada).
+
+  Flujo (sin WebSocket, sin subprocess — a diferencia del pipeline):
+  1. El usuario pega texto o un link (YouTube/Mixcloud) en el textarea.
+  2. POST /api/resolver/parse → tracks estructurados.
+  3. El frontend resuelve track POR TRACK (POST /api/resolver/track en
+     serie) y pinta cada fila al llegar — progreso en vivo natural.
+     Cerrar la pestaña simplemente corta el loop; no queda nada huérfano.
+  4. Sección "En seguimiento": el tracker de unreleased, con re-consulta.
+
+  El panel completo (markup + Alpine) vive en _resolver_panel.html,
+  compartido con el embed de la página principal. La key de YouTube la
+  toma el server de su env (YOUTUBE_API_KEY) — sin ella, Deezer/iTunes
+  funcionan igual.
+-#}
+{% extends "base.html" %}
+
+{% block title %}Resolver{% endblock %}
+
+{% block content %}
+<header class="page-intro">
+  <h1>Resolver de tracklists</h1>
+  <p class="lead">
+    Pegá un tracklist (o el link de un set de YouTube/Mixcloud) y lo
+    buscamos track por track en Deezer, iTunes y YouTube. Los IDs y los
+    unreleased no existen en catálogos públicos — encontrar todo es
+    imposible por diseño; lo no encontrado queda en seguimiento.
+  </p>
+</header>
+
+{% include "_resolver_panel.html" %}
+{% endblock %}

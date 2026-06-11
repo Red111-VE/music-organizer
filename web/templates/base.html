@@ -209,6 +209,21 @@
       box-shadow: 0 0 10px var(--accent), 0 0 2px var(--accent);
     }
 
+    /* Divisor entre el flujo de análisis (3 pasos) y las herramientas
+       sueltas (Resolver) — son cosas distintas y el header lo muestra. */
+    .step-indicator .step-divider {
+      width: 1px;
+      height: 12px;
+      background: var(--border-strong);
+      align-self: center;
+    }
+    .step-indicator a.step-link {
+      text-decoration: none;
+      color: var(--text-3);
+    }
+    .step-indicator a.step-link:hover { color: var(--text); }
+    .step-indicator a.step-link.is-active { color: var(--text); }
+
     /* Brand mark: el logo RED111 — "RED" en --text, "111" en --accent, con
        una línea roja debajo. Display font 700 para mantener el peso del
        logo original; ``font-variation-settings: opsz`` afina el trazo al
@@ -304,12 +319,17 @@
         <span class="step{% if step == 1 %} is-active{% endif %}">01 · Setup</span>
         <span class="step{% if step == 2 %} is-active{% endif %}">02 · Progress</span>
         <span class="step{% if step == 3 %} is-active{% endif %}">03 · Results</span>
+        <span class="step-divider" aria-hidden="true"></span>
+        <a class="step step-link{% if active_tool == 'resolver' %} is-active{% endif %}"
+           href="/resolver">Resolver</a>
       </nav>
     </div>
     <span class="brand-mark" aria-label="RED111">RED<span class="nums">111</span></span>
   </header>
 
-  <main>
+  {#- main_class: las páginas pueden ensanchar el contenedor (la
+      principal usa main--wide para las dos herramientas lado a lado). -#}
+  <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
 

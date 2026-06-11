@@ -41,3 +41,12 @@ async def results(request: Request) -> HTMLResponse:
     return request.app.state.templates.TemplateResponse(
         request, "results.html", {"step": 3},
     )
+
+
+@router.get("/resolver", response_class=HTMLResponse)
+async def resolver(request: Request) -> HTMLResponse:
+    """Pantalla 4: resolver de tracklists (herramienta aparte del flujo
+    de análisis — sin ``step``; el header resalta por ``active_tool``)."""
+    return request.app.state.templates.TemplateResponse(
+        request, "resolver.html", {"step": 0, "active_tool": "resolver"},
+    )

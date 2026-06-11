@@ -20,16 +20,25 @@
 
 {% block title %}Setup{% endblock %}
 
+{% block main_class %}main--wide{% endblock %}
+
 {% block content %}
-{#- Wrapper x-data: el form Y el modal del file-browser comparten el mismo
+{#- Las dos herramientas lado a lado: análisis (izquierda) y resolver
+    (derecha), cada una con su componente Alpine independiente. En
+    pantallas angostas la grilla colapsa a una columna. -#}
+<div class="tools-grid">
+
+{#- ============ Columna 1: análisis ============
+    Wrapper x-data: el form Y el modal del file-browser comparten el mismo
     scope reactivo. Si el modal viviera fuera de este div, no vería
     ``browser.open`` ni ``closeBrowser()`` — Alpine es reactivo solo
     dentro del scope del ``x-data``. -#}
-<div x-data="setupForm()" x-init="init()">
+<div class="tool-col" x-data="setupForm()" x-init="init()">
 
-<header class="page-intro">
-  <h1>Análisis nuevo</h1>
-  <p class="lead">
+<header class="tool-intro">
+  <span class="section-label">Pipeline</span>
+  <h1 class="tool-title">Análisis nuevo</h1>
+  <p class="tool-lead">
     Detección de género y energía con Essentia, enriquecimiento de tags
     y reorganización por género. Local, sin upload.
   </p>
@@ -275,7 +284,27 @@
   </div>
 </div>
 
-</div>{# x-data wrapper #}
+</div>{# tool-col análisis (x-data setupForm) #}
+
+{#- ============ Columna 2: resolver ============
+    Componente Alpine independiente (su x-data vive en el partial), así
+    que convive con setupForm() sin pisarse. La vista dedicada sigue en
+    /resolver (mismo partial). -#}
+<div class="tool-col">
+  <header class="tool-intro">
+    <span class="section-label">Herramienta</span>
+    <h2 class="tool-title">Resolver de tracklists</h2>
+    <p class="tool-lead">
+      Pegá un tracklist o el link de un set (YouTube/Mixcloud) y lo
+      buscamos track por track en Deezer, iTunes y YouTube. Lo que no
+      exista queda en seguimiento —
+      <a href="/resolver">vista dedicada →</a>
+    </p>
+  </header>
+  {% include "_resolver_panel.html" %}
+</div>
+
+</div>{# tools-grid #}
 {% endblock %}
 
 {% block scripts %}

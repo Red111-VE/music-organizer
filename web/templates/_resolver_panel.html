@@ -1,0 +1,341 @@
+{#-
+  Panel del resolver de tracklists — PARTIAL compartido.
+
+  Lo incluyen dos páginas:
+  - resolver.html (pantalla dedicada, con su page-intro grande)
+  - index.html (embebido bajo el form de análisis, con un intro compacto)
+
+  Autocontenido: trae su propio componente Alpine (x-data="resolverView()")
+  y el <script> que lo define — un include = panel funcionando. Convive
+  con otros componentes Alpine de la misma página (en el index, con
+  setupForm()) porque cada x-data es un scope independiente.
+
+  El flujo vive documentado en resolver.html: parse server-side, luego
+  resolución track-por-track pintando filas en vivo, y el tracker de
+  unreleased compartido con el CLI.
+-#}
+<div x-data="resolverView()" x-init="init()">
+
+  {#- Input -#}
+  <section class="form-section">
+    <div class="section-header">
+      <span class="section-label">Tracklist</span>
+      <span class="section-rule"></span>
+    </div>
+    <div class="field">
+      <p class="field-hint">
+        Una línea por track (<code>Artista - Título</code> — tolera
+        numeración, timestamps y sellos), o una URL de YouTube/Mixcloud.
+      </p>
+      <textarea
+        class="text-input tracklist-input"
+        x-model="input"
+        :disabled="running"
+        rows="8"
+        placeholder="01. Chris Stussy - All Night Long
+02. A-Trak - Sway (LiTek Remix)
+03. ID - ID
+
+…o: https://youtu.be/dQw4w9WgXcQ"
+        spellcheck="false"
+      ></textarea>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="button-primary"
+              @click="start()" :disabled="running || !input.trim()">
+        <span x-show="!running">Resolver</span>
+        <span x-show="running" x-cloak
+              x-text="`Resolviendo ${doneCount}/${tracks.length}…`"></span>
+        <span class="button-arrow" aria-hidden="true">→</span>
+      </button>
+    </div>
+    <div class="form-error" x-show="error" x-cloak role="alert">
+      <span x-text="error" style="white-space: pre-line"></span>
+    </div>
+  </section>
+
+  {#- Resultados -#}
+  <section class="form-section" x-show="tracks.length > 0" x-cloak>
+    <div class="section-header">
+      <span class="section-label">Resultados</span>
+      <span class="section-rule"></span>
+      <span class="section-count mono" x-text="origin"></span>
+    </div>
+
+    <table class="rtable">
+      <thead>
+        <tr>
+          <th class="num">#</th>
+          <th>Estado</th>
+          <th>Track buscado</th>
+          <th>Match</th>
+          <th class="num">Conf</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="t in tracks" :key="t.line_no + ':' + t.raw">
+          <tr>
+            <td class="num mono" x-text="t.line_no"></td>
+            <td>
+              <span class="status-chip" :data-status="rowStatus(t)"
+                    x-text="rowStatusText(t)"></span>
+            </td>
+            <td x-text="trackLabel(t)"></td>
+            <td>
+              <template x-if="t.resolution && t.resolution.best">
+                <span>
+                  <span x-text="`${t.resolution.best.artist} - ${t.resolution.best.title}`"></span>
+                  <span class="mono provider-tag" x-text="t.resolution.best.provider"></span>
+                </span>
+              </template>
+              <template x-if="t.resolution && !t.resolution.best">
+                <span class="dim">—</span>
+              </template>
+            </td>
+            <td class="num mono"
+                x-text="t.resolution && t.resolution.best
+                        ? Math.round(t.resolution.best.score) : ''"></td>
+            <td>
+              <template x-if="rowLink(t)">
+                <a :href="rowLink(t)" target="_blank" rel="noopener"
+                   class="row-link"
+                   x-text="rowLinkLabel(t)"></a>
+              </template>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    {#- Resumen al completar -#}
+    <div class="resolve-summary" x-show="!running && doneCount > 0" x-cloak>
+      <span class="count-chip" data-status="ok"
+            x-text="`${counts.ok} encontrados`"></span>
+      <span class="count-chip" data-status="dudoso"
+            x-text="`${counts.dudoso} dudosos`"></span>
+      <span class="count-chip" data-status="no-encontrado"
+            x-text="`${counts['no-encontrado']} no encontrados`"></span>
+      <span class="count-chip" data-status="id"
+            x-text="`${counts.id} IDs`"></span>
+    </div>
+  </section>
+
+  {#- Tracker de unreleased -#}
+  <section class="form-section" x-show="unreleased.length > 0 || recheckFound.length > 0" x-cloak>
+    <div class="section-header">
+      <span class="section-label">En seguimiento (unreleased)</span>
+      <span class="section-rule"></span>
+      <span class="section-count mono"
+            x-text="`${unreleased.length} track(s)`"></span>
+    </div>
+
+    <p class="field-hint">
+      Tracks con nombre que ningún catálogo tuvo. Se re-consultan cuando
+      quieras — si alguno sale, te enterás acá.
+    </p>
+
+    <div class="form-error" x-show="recheckError" x-cloak role="alert">
+      <span x-text="recheckError"></span>
+    </div>
+
+    {#- Los que salieron en el último recheck -#}
+    <div class="recheck-found" x-show="recheckFound.length > 0" x-cloak>
+      <template x-for="f in recheckFound" :key="f.artist + f.title">
+        <div class="recheck-found-row">
+          <span class="status-chip" data-status="ok">¡salió!</span>
+          <span x-text="`${f.artist} - ${f.title}`"></span>
+          <a :href="f.match.best.url" target="_blank" rel="noopener"
+             class="row-link"
+             x-text="f.match.best.provider"></a>
+        </div>
+      </template>
+    </div>
+
+    <ul class="unreleased-list">
+      <template x-for="u in unreleased" :key="u.artist + u.title + u.remix">
+        <li class="unreleased-row">
+          <span class="unreleased-name"
+                x-text="u.artist + ' - ' + u.title + (u.remix ? ` (${u.remix})` : '')"></span>
+          <span class="unreleased-meta mono"
+                x-text="`visto ${u.times_seen}× · desde ${u.first_seen}`"></span>
+        </li>
+      </template>
+    </ul>
+
+    <div class="form-actions">
+      <button type="button" class="button-secondary"
+              @click="recheck()" :disabled="rechecking || unreleased.length === 0">
+        <span x-show="!rechecking">Re-consultar todos</span>
+        <span x-show="rechecking" x-cloak>Re-consultando…</span>
+      </button>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  function resolverView() {
+    return {
+      input: '',
+      origin: '',
+      tracks: [],            // parsed + {resolution: null|{...}}
+      running: false,
+      doneCount: 0,
+      error: '',
+
+      unreleased: [],
+      recheckFound: [],
+      rechecking: false,
+      recheckError: '',
+
+      async init() {
+        await this.loadUnreleased();
+      },
+
+      // ================================================================
+      // Resolución
+      // ================================================================
+
+      async start() {
+        this.error = '';
+        this.tracks = [];
+        this.origin = '';
+        this.doneCount = 0;
+        this.running = true;
+
+        try {
+          // 1) Parse (texto o URL — lo decide el server).
+          const res = await fetch('/api/resolver/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: this.input }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            this.error = data.detail || `Error HTTP ${res.status}`;
+            return;
+          }
+          this.origin = data.origin;
+          this.tracks = data.tracks.map(t => ({ ...t, resolution: null }));
+
+          // 2) Resolver en serie: una fila se pinta por respuesta. El
+          // orden secuencial respeta el throttle de proveedores del server.
+          for (const t of this.tracks) {
+            if (!this.running) return;
+            const r = await fetch('/api/resolver/track', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                raw: t.raw, line_no: t.line_no,
+                artist: t.artist, title: t.title,
+                remix: t.remix, is_id: t.is_id,
+              }),
+            });
+            if (r.ok) {
+              t.resolution = await r.json();
+            } else {
+              t.resolution = {
+                status: 'no-encontrado', best: null,
+                youtube_search_url: '', notes: [`HTTP ${r.status}`],
+              };
+            }
+            this.doneCount++;
+          }
+
+          // El tracker pudo crecer con los no-encontrados.
+          await this.loadUnreleased();
+        } catch (e) {
+          this.error = `No se pudo contactar al servidor: ${e.message}`;
+        } finally {
+          this.running = false;
+        }
+      },
+
+      // ================================================================
+      // Tracker
+      // ================================================================
+
+      async loadUnreleased() {
+        try {
+          const r = await fetch('/api/resolver/unreleased');
+          if (!r.ok) {
+            const data = await r.json().catch(() => ({}));
+            this.recheckError = data.detail || `Error HTTP ${r.status}`;
+            return;
+          }
+          this.unreleased = (await r.json()).tracks;
+          this.recheckError = '';
+        } catch (e) {
+          this.recheckError = `No se pudo leer el tracker: ${e.message}`;
+        }
+      },
+
+      async recheck() {
+        this.rechecking = true;
+        this.recheckError = '';
+        this.recheckFound = [];
+        try {
+          const r = await fetch('/api/resolver/recheck', { method: 'POST' });
+          const data = await r.json();
+          if (!r.ok) {
+            this.recheckError = data.detail || `Error HTTP ${r.status}`;
+            return;
+          }
+          this.recheckFound = data.found;
+          await this.loadUnreleased();
+        } catch (e) {
+          this.recheckError = `No se pudo contactar al servidor: ${e.message}`;
+        } finally {
+          this.rechecking = false;
+        }
+      },
+
+      // ================================================================
+      // Presentación
+      // ================================================================
+
+      get counts() {
+        const c = { 'ok': 0, 'dudoso': 0, 'no-encontrado': 0, 'id': 0 };
+        for (const t of this.tracks) {
+          if (t.resolution && c[t.resolution.status] !== undefined) {
+            c[t.resolution.status]++;
+          }
+        }
+        return c;
+      },
+
+      trackLabel(t) {
+        if (t.is_id) return t.raw;
+        let label = `${t.artist} - ${t.title}`;
+        if (t.remix) label += ` (${t.remix})`;
+        return label;
+      },
+
+      rowStatus(t) {
+        return t.resolution ? t.resolution.status : 'pendiente';
+      },
+
+      rowStatusText(t) {
+        return t.resolution ? t.resolution.status : '…';
+      },
+
+      rowLink(t) {
+        if (!t.resolution) return '';
+        const r = t.resolution;
+        if (r.best && (r.status === 'ok' || r.status === 'dudoso')) {
+          return r.best.url;
+        }
+        return r.youtube_search_url || '';
+      },
+
+      rowLinkLabel(t) {
+        const r = t.resolution;
+        if (r.best && (r.status === 'ok' || r.status === 'dudoso')) {
+          return 'abrir ↗';
+        }
+        return 'buscar en YouTube ↗';
+      },
+    };
+  }
+</script>
