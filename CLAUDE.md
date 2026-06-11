@@ -6,7 +6,7 @@ Contexto operativo para Claude Code al trabajar en este repo. Roadmap de product
 
 **Red111 Music Organizer** — "Smart library tools for DJs". Herramienta open source (MIT) para analizar, etiquetar y organizar bibliotecas musicales de DJ con deep learning (Essentia: MAEST + Discogs-400 para género, emoMusic para energía/arousal 1–9), más un **resolver de tracklists** (Deezer/iTunes/YouTube) con tracker de unreleased.
 
-- Repo público: `github.com/Red111-VE/music-organizer`. Branch: **`master`**. Tag publicado: **`v0.1.0`** (pipeline CLI). La Fase 2 (web) está commiteada y pusheada (`e6baae3`).
+- Repo público: `github.com/Red111-VE/music-organizer`. Branch: **`master`**. Tags publicados: **`v0.1.0`** (pipeline CLI) y **`v0.3.0`** (web + resolver de tracklists).
 - Sucesor del repo `dj-organize` (mismo directorio padre): los 5 scripts originales viven allá y como snapshots en `reference_scripts/` aquí (**gitignored**, no se modifican ni lintan). 4 fueron refactorizados a `core/`; el 5º (Camelot/BPM) está **DESCARTADO** — Jorge: rekordbox ya lo hace, no vale la pena.
 - Probado sobre la biblioteca real de Jorge: 471 tracks FLAC house/tech-house en `/Volumes/Untitled/deemix_Music`.
 
@@ -32,7 +32,7 @@ Imports de essentia/mutagen/rapidfuzz son **lazy en todo el proyecto** — mante
 
 ## ESTADO ACTUAL
 
-El **v0.3.x (resolver de tracklists) está completo, validado por Jorge y commiteado** junto con la actualización de docs (README/ROADMAP/CHANGELOG/CLAUDE.md). Pendiente: **decidir la numeración del tag** (el roadmap llamaba "v0.2.x" al Camelot/BPM descartado — la web + resolver podrían salir como v0.2.0 o v0.3.0, decisión de Jorge) y publicar el release en GitHub.
+El **v0.3.0 está publicado** (tag + release en GitHub, "Local web UI + tracklist resolver", commit `16d5e03`): cubre la Fase 2 web y el resolver completo. No quedó tag intermedio v0.2.x — ese número correspondía al Camelot/BPM descartado.
 
 `mypy core/ cli/` y `ruff check .` están **limpios en todo el árbol** (la deuda de 19 errores en `cli/serve.py` se pagó).
 

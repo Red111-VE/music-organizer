@@ -37,7 +37,7 @@ explorador de carpetas integrado, guard de origen↔destino anidados, y
 `organize` desde la web siempre con una carpeta por género sin `Lossless/`
 (decisión de producto; el CLI conserva ambos flags).
 
-### v0.3.x — Resolver de tracklists (código completo, pendiente release)
+### v0.3.0 — Resolver de tracklists (publicado)
 
 CLI (`music-organizer resolve`) + panel web (embebido en la principal al
 lado del análisis, y vista dedicada en `/resolver`):
@@ -57,7 +57,9 @@ Decisiones de diseño cumplidas: solo fuentes legales (sin scraping de
 gratuita), expectativas explícitas (los IDs/unreleased no existen en
 catálogos — el resumen lo dice siempre).
 
-Falta: decidir la numeración del tag y publicar el release en GitHub.
+Publicado como **v0.3.0** ("Local web UI + tracklist resolver") junto con la
+Fase 2 web, en un solo tag. No hubo v0.2.x — ese número correspondía al
+Camelot/BPM descartado.
 
 ### Descartado
 
